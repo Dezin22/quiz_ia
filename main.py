@@ -5,18 +5,19 @@ from fastapi.middleware.cors import CORSMiddleware
 import sqlite3
 import os
 from dotenv import load_dotenv
+import google.generativeai as genai
 from google.generativeai import text
 
 app = FastAPI()
 
 # Obter API Key do Gemini do ambiente
 load_dotenv()
-api_key = os.getenv("GEMINI_API_KEY")  # Nome da variável de ambiente alterado
+api_key = os.getenv("GEMINI_API_KEY")
 if not api_key:
     raise ValueError("A chave da API Gemini não está definida. Configure a variável de ambiente GEMINI_API_KEY.")
 
 # Configurar a API do Gemini
-text.configure(api_key=api_key)
+genai.configure(api_key=api_key)
 
 app.add_middleware(
     CORSMiddleware,
@@ -25,7 +26,6 @@ app.add_middleware(
     allow_methods=["*"],  # Permite todos os métodos (GET, POST, OPTIONS, etc.)
     allow_headers=["*"],  # Permite todos os cabeçalhos
 )
-
 
 # ... (resto do código igual, exceto a função generate_question)
 import sqlite3
@@ -58,45 +58,40 @@ def save_to_db(question, options, answer):
     conn = sqlite3.connect("quiz.db")
     cursor = conn.cursor()
 
-    cursor.execute("INSERT INTO questions (question, answer) VALUES (?, ?)", (question, answer))
-    question_id = cursor.lastrowid  # Obtém o ID da pergunta inserida
-
-    for option in options:
-        cursor.execute("INSERT INTO options (question_id, option_text) VALUES (?, ?)", (question_id, option))
-
+    cursor.execute("INSERT INTO questions (question, option_a, option_b, option_c, option_d, answer) VALUES (?, ?, ?, ?, ?, ?)", (question, options[0], options[1], options[2], options[3], answer))
     conn.commit()
     conn.close()
 
-
 # Modelo de dados para as respostas do usuário
-
 class UserAnswers(BaseModel):
     answers: List[str]
+
 @app.post("/generate_question")
 def generate_question():
     prompt = "Crie uma pergunta de múltipla escolha sobre ciência com quatro opções e indique a resposta correta."
 
-    response = text.generate_text(
-        model="gemini-pro",  # Ou outro modelo Gemini disponível
-        prompt=prompt,
-        temperature=0.7,  # Ajuste a temperatura conforme necessário
-        max_output_tokens=200  # Ajuste o número de tokens conforme necessário
-    )
-
-    generated_text = response.result.strip()
-
-    # Supondo que o texto gerado tenha o formato correto (ajustar conforme necessário)
     try:
+        response = text.generate_text(
+            model="gemini-pro",  # Ou outro modelo Gemini disponível
+            prompt=prompt,
+            temperature=0.7,  # Ajuste a temperatura conforme necessário
+            max_output_tokens=200  # Ajuste o número de tokens conforme necessário
+        )
+
+        generated_text = response.result.strip()
+
+        # Supondo que o texto gerado tenha o formato correto (ajustar conforme necessário)
         lines = generated_text.split("\n")
         question = lines[0]
         options = lines[1:5]
         answer = lines[5]
+
+        save_to_db(question, options, answer)
+        return {"question": question, "options": options, "answer": answer}
+
     except Exception as e:  # Captura exceções gerais para tratamento
         print(f"Erro na geração de texto: {e}")
         raise HTTPException(status_code=500, detail=f"Erro ao gerar pergunta: {e}")  # Retorna erro 500
-
-    save_to_db(question, options, answer)
-    return {"question": question, "options": options, "answer": answer}
 
 # ... (resto do código igual)
 
